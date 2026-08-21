@@ -1,0 +1,164 @@
+
+#include <windows.h>
+#include <stdio.h>
+#include <time.h>
+#include <string.h>
+#define ID_TIMER 1
+char targetString[25];
+char inputString[25];
+int currentPosition = 0;
+int startTime;
+int totalChars = 0;
+int correctChars = 0;
+DWORD StartTime = 0;
+HDC hdc;
+void GenerateRandomString()//生成随机字符串
+{
+	const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	int length = 15+rand() % 10;
+	
+	for (int i = 0; i < length; ++i)
+	{
+		targetString[i] = charset[rand() % (sizeof(charset) - 1)];
+	}
+	targetString[length] = '\0';
+	currentPosition = 0;
+	inputString[0] = '\0';
+
+}
+//计算速度和准确率
+void CalculateState()
+{
+	char stats[100];
+	DWORD currentTime = GetTickCount();
+	double elapsedSeconds = (currentTime - startTime) / 1000.0;
+	if (elapsedSeconds < 1) elapsedSeconds = 1; //避免除以零
+
+	double speed = (totalChars / 5.0) / elapsedSeconds * 60; //计算每分钟的单词数
+	double accuracy = (double)correctChars / totalChars * 100; //计算准确率
+
+	sprintf_s(stats, sizeof(stats), "Speed: %.2f WPM, Accuracy: %.2f%%，total characters: %d", speed, accuracy, totalChars);
+	SetTextColor(hdc, RGB(0, 0, 0));
+	TextOut(hdc, 10, 100, stats, lstrlen(stats));
+}
+
+LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	static HFONT hFont;
+	HDC hdc;
+	PAINTSTRUCT ps;
+	RECT rect;
+	TEXTMETRIC tm;
+	SIZE size;
+	switch (msg)
+	{
+	case WM_CREATE:
+		//创建字体
+		hFont = CreateFont(24, 0, 0, 0, FW_NORMAL,
+			FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+			OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+			TEXT("Courier New"));
+		//初始化
+		GenerateRandomString(); 
+		startTime = GetTickCount();
+		SetTimer(hwnd, ID_TIMER, 1000, NULL); //设置定时器
+		break;
+	case WM_PAINT:
+		hdc = BeginPaint(hwnd, &ps);
+		GetClientRect(hwnd, &rect);
+		//设置字体
+		SelectObject(hdc, hFont);
+		GetTextMetrics(hdc, &tm);
+		//绘制目标字符串
+		TextOut(hdc, 10, 10, targetString, lstrlen(targetString));
+		//绘制输入
+		for (int i = 0; i < currentPosition; ++i)
+		{
+			if (inputString[i] == targetString[i])
+				SetTextColor(hdc, RGB(0, 255, 0)); //绿色
+			else
+				SetTextColor(hdc, RGB(255, 0, 0)); //红色
+			//绘制每个字符
+			TextOut(hdc, 10 + i * tm.tmAveCharWidth, 50, &inputString[i], 1);
+		}
+		SetTextColor(hdc, RGB(0, 0, 0)); //恢复默认颜色
+		if (currentPosition < lstrlen(targetString))
+			TextOut(hdc, 10 + currentPosition * tm.tmAveCharWidth, 50, "_", 1); //绘制光标)
+		CalculateState();
+		EndPaint(hwnd, &ps);
+		return 0;
+
+	case WM_CHAR:
+		if (wParam == VK_BACK) //处理退格键
+		{
+			if (currentPosition > 0)
+			{
+				currentPosition--;
+				inputString[currentPosition] = '\0';
+			}
+		}
+		else if (wParam == VK_RETURN) //处理回车键
+		{
+			if (currentPosition == lstrlen(targetString))
+			{
+				MessageBox(hwnd, "Congratulations! You typed the string correctly.", "Success", MB_OK);
+				GenerateRandomString();
+				startTime = GetTickCount();
+			}
+			else
+			{
+				MessageBox(hwnd, "You did not finish typing the string correctly.", "Error", MB_OK);
+			}
+		}
+		else if (currentPosition < lstrlen(targetString)) //处理其他字符
+		{
+			inputString[currentPosition] = (char)wParam;
+			currentPosition++;
+			inputString[currentPosition] = '\0';
+		}
+
+		InvalidateRect(hwnd, NULL, TRUE); //重绘窗口
+		break;
+	case WM_TIMER:
+		InvalidateRect(hwnd, NULL, TRUE); //重绘窗口
+		break;
+	case WM_DESTROY:
+		KillTimer(hwnd, 1); //销毁定时器
+		PostQuitMessage(0);
+		break;
+	default:
+		return DefWindowProc(hwnd, msg, wParam, lParam);
+	}
+	return 0;
+}
+
+int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
+                     _In_opt_ HINSTANCE hPrevInstance,
+                     _In_ LPWSTR    lpCmdLine,
+                     _In_ int       nCmdShow)
+{
+	WNDCLASS wnd = { 0 };
+	wnd.style = CS_HREDRAW | CS_VREDRAW;
+    wnd.lpfnWndProc = WndProc;
+	wnd.hInstance = hInstance;
+	wnd.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+	wnd.lpszClassName = "MyWindowClass";
+	wnd.hCursor = LoadCursor(NULL, IDC_ARROW);
+
+	RegisterClass(&wnd);
+		
+	HWND hWnd = CreateWindow("MyWindowClass", "My Window",
+		WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+		100,100 , 800, 600,
+		NULL, NULL, hInstance, NULL);
+
+	ShowWindow(hWnd, SW_SHOW);
+	UpdateWindow(hWnd);
+	
+	MSG msg = { 0 };
+	while (GetMessage(&msg, NULL, 0, 0))
+	{
+		TranslateMessage(&msg);//将虚拟键消息转换为字符消息
+		DispatchMessage(&msg);
+	}
+}
